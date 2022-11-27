@@ -1,0 +1,137 @@
+---
+title: Estimation of Taylor Rule in the United States in the period 1970:1 - 2020:4
+  using the linear regression model
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+Please, for the context, mathematical and statistical background, database sources read the "README.md" file in the GitHub repository. 
+
+```{r}
+rm(list=ls())
+```
+
+We can now load the data 
+```{r}
+intrate <- read.csv("interest_rate_quarterly.csv")
+inflrate <- read.csv("inflation_rate_quarterly.csv")
+outgap <- read.csv("output_gap_quarterly.csv")
+```
+
+Given that our datasets are built in different time periods, we can now solve for time discrepancy 
+```{r}
+intrate <- intrate[-c(1:22, 227:229), ]; summary(intrate)
+inflrate <- inflrate[-c(1:40, 245:248), ]; summary(inflrate)
+outgap <- outgap[-c(1:84, 289:292), ]; summary(outgap)
+```
+We can now rename all columns for clarity purposes
+```{r}
+names(intrate)[names(intrate) == "Value"] <- "interest_rate"
+names(inflrate)[names(inflrate) == "CPALTT01USQ657N"] <- "inflation_rate"
+names(outgap)[names(outgap) == "GDPC1_GDPPOT"] <- "output_gap"
+```
+
+Create a new database merging the three different sources
+```{r}
+mydata <- cbind(intrate, inflrate[c("inflation_rate")], outgap[c("output_gap")])
+```
+
+We can now create some plots of the original datasets
+```{r}
+if (!require("ggplot2")) install.packages("ggplot2"); library(ggplot2)
+if (!require("reshape2")) install.packages("reshape2"); library(reshape2)
+
+interest_rate <- mydata[["interest_rate"]]
+inflation_rate <- mydata[["inflation_rate"]]
+output_gap <- mydata[["output_gap"]]
+date <- seq(as.Date("1970-01-01"), by="3 month", length.out=204)
+
+dataset <- data.frame(date,interest_rate,inflation_rate,output_gap)
+datasetmelt <- melt(dataset, id.vars="date")
+
+ggplot(datasetmelt, aes( x=date, y=value, colour=variable, group=variable )) + 
+  geom_line() +
+  scale_color_manual(values=c("interest_rate"="black","inflation_rate"="red","output_gap"="orange")) 
+```
+We can now implement a linear regression with just inflation and output gap as regressors
+```{r}
+(taylor_reg <- lm(interest_rate ~ inflation_rate + output_gap , data=mydata))
+summary(taylor_reg)
+```
+We can now procede with some tests for linearity, homoskedasticity and uncorrelation. 
+```{r}
+if (!require("lmtest")) install.packages("lmtest"); library(lmtest)
+if (!require("tseries")) install.packages("tseries"); library(tseries)
+```
+RESET - Ramsey test for linearity
+```{r}
+resettest(lm(interest_rate ~ inflation_rate + output_gap, data = mydata), power = 2:4, type = "fitted")
+```
+
+BREUSCH-PAGAN test for homoskedasticity
+```{r}
+bptest(taylor_reg)
+```
+JARQUE-BERA test for normality of the error term
+```{r}
+residuals <- unlist(taylor_reg[c("residuals")]); typeof(residuals)
+jarque.bera.test(residuals)
+```
+BREUSCH-GODFREY test for uncorrelation
+```{r}
+bgtest(lm(interest_rate ~ inflation_rate + output_gap, data = mydata), order=3, data=mydata)
+```
+
+We implement now a new regression using also unemployment rate as regressors. 
+```{r}
+unemplrate <- read.csv("unemployment_rate.csv")
+unemplrate <- unemplrate[-c(205:208), ]
+summary(unemplrate)
+names(unemplrate)[names(unemplrate) == "LRUN64TTUSQ156S"] <- "unemployment_rate"
+
+mydata2 <- cbind(mydata, unemplrate[c("unemployment_rate")])
+
+unemployment_rate <- mydata2[["unemployment_rate"]]
+dataset2 <- data.frame(date, unemployment_rate, inflation_rate)
+dataset2melt <- melt(dataset2, id.vars="date")
+
+colnames(mydata2)
+```
+
+We produce now a new plot for the unemployment rate
+```{r}
+ggplot(dataset2melt, aes( x=date, y=value, colour=variable, group=variable )) + 
+  geom_line() +
+  scale_color_manual(values=c("inflation_rate"="black","unemployment_rate"="orange")) 
+```
+Running a linear regression for the new formula
+```{r}
+(taylor_reg_un <- lm(interest_rate ~ inflation_rate + output_gap + unemployment_rate, data = mydata2))
+summary(taylor_reg_un)
+```
+As before, we procede now running some tests 
+RESET - Ramsey test for linearity 
+```{r}
+resettest(lm(interest_rate ~ inflation_rate + output_gap + unemployment_rate, data = mydata2), power = 2:4, type = "fitted")
+```
+
+BREUSCH-PAGAN test for homoskedasticity
+```{r}
+bptest(taylor_reg_un)
+```
+
+JARQUE-BERA test for normality of the error term
+```{r}
+residuals2 <- unlist(taylor_reg_un[c("residuals")]); typeof(residuals2)
+jarque.bera.test(residuals2)
+```
+
+BREUSCH-GODFREY test for uncorrelation
+```{r}
+bgtest(lm(interest_rate ~ inflation_rate + output_gap + unemployment_rate, data = mydata2), order=3, data=mydata)
+
+```
+
+
